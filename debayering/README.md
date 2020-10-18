@@ -2,8 +2,9 @@
 
 ## Установка
 ```sh
-python3 -m venv tiny-imagenet-classifier
-pip install -r requirements.txt 
+python3 -m venv debayering_env
+source debayering_env/bin/activate
+pip3 install -r requirements.txt 
 ```
 
 
@@ -17,6 +18,9 @@ $ python3 main.py
 
 ## Быстродействие:
 Скорость выполнения программы на мегапиксель: 1.26 ± 0.02 s
+
+##PSNR
+Значение метрики PSNR составляет 25.2
 
 ## Снижение разрешения
 Количество полос на сторону изображения, на котором они сливаются составляет 16 для оригинального изображения и 12 для восстановленного, соответственно делается вывод о снижении разрешения в 16/12 = 1.3 раза.
