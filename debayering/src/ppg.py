@@ -26,14 +26,6 @@ def get_color(x, y):
             return "green"
         else:
             return "blue"
-            
-@njit
-def getmap(color, h, w):
-    color_map = np.zeros((h, w))
-    for y in range(h):
-        for x in range(w):
-            color_map[h, w] = 1
-    return color_map
 
 @njit
 def first_step(green_matrix, red_blue_matrix):
@@ -91,7 +83,6 @@ def PPG(source_image, orig_image):
     
     target_image = np.zeros((h, w, 3))
     
-    # map check:
     
     for y in prange(2, h-2):
         for x in prange(2, w-2):
