@@ -1,16 +1,14 @@
 import numpy as np
 from numba import njit
+import cv2
 
-def Y(image):
-    result = 0.299 * image[:,:,0] + 0.5879 * image[:,:,1] + 0.114 * image[:,:,2]
-    return result
 
 def MSE(output, original):
-    Y_ref = Y(original[2:-2, 2:-2, :])
-    Y_out = Y(output[2:-2, 2:-2, :])
+    Y_ref = cv2.cvtColor(output[2:-2, 2:-2, :].astype('uint8'), cv2.COLOR_RGB2GRAY)
+    Y_out = cv2.cvtColor(original[2:-2, 2:-2, :].astype('uint8'), cv2.COLOR_RGB2GRAY)
     h, w = Y_out.shape
     
-    return 1 / (h * w) * np.sum((Y_out - Y_ref) ** 2)
+    return 1 / (h * w) * np.power(Y_ref - Y_out, 2).sum()
 
 def PSNR(output, original):
     mse = MSE(output, original)
