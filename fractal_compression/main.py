@@ -3,9 +3,10 @@ import argparse
 import numpy as np
 from numba import njit, prange
 from time import time
-import tqdm
+from tqdm import tqdm
 import os
 from matplotlib import pyplot as plt
+from pathlib  import Path
 
 
 @njit(parallel=True, fastmath=True)
@@ -14,11 +15,10 @@ def MSE(output, original):
     return 1 / (h * w) * np.power(output - original, 2).sum()
 
 
-@njit(parallel=True, fastmath=True)
+@njit(fastmath=True)
 def PSNR(output, original):
     mse = MSE(output, original)
     Y_max = 255
-
     return 10 * np.log10(Y_max * Y_max / mse)
 
 
@@ -39,6 +39,17 @@ def get_all_possible_transforms():
 
 
 @njit(parallel=True, fastmath=True)
+def classify(img):
+    threshold = np.mean(img)
+    first_mean = np.mean(img[:img.shape[0] // 2, :img.shape[1] // 2])
+    second_mean = np.mean(img[:img.shape[0] // 2, img.shape[1] // 2:])
+    third_mean = np.mean(img[img.shape[0] // 2:, :img.shape[1] // 2])
+    fourth_mean = np.mean(img[img.shape[0] // 2:, img.shape[1] // 2:])
+
+    return first_mean > threshold, second_mean > threshold, third_mean > threshold, fourth_mean > threshold
+
+
+@njit(parallel=True, fastmath=True)
 def calculate_contrast_brightness(src_image, dst_image):
     """
     solve linear transform from one image to another
@@ -53,7 +64,7 @@ def calculate_contrast_brightness(src_image, dst_image):
     return np.linalg.lstsq(src_matrix, dst_matrix)[0]
 
 
-def read_image(path, fastmath=True):
+def read_image(path):
     image_name = path.split("/")[-1].split(".")[0]
     return cv2.imread(path, cv2.IMREAD_GRAYSCALE), image_name
 
@@ -76,7 +87,7 @@ def color_transform(img, contrast, brightness):
     return img * contrast + brightness
 
 
-@njit(parallel=True, fastmath=True)
+@njit(fastmath=True)
 def transform(img, transformation, contrast=1.0, brightness=0):
     img = spatial_transform(img, *transformation)
     return color_transform(img, contrast, brightness)
@@ -99,7 +110,8 @@ def resize(img, scale):
     return rescaled_image
 
 
-@njit(fastmath=True)
+
+@njit()
 def large_blocks(img, block_size):
     """
     create tuple of large blocks (i, j, orientation,
@@ -110,13 +122,15 @@ def large_blocks(img, block_size):
     blocks = []
     large_block_size = block_size * 2
 
-    for i in range(img.shape[0] // large_block_size):
+    for i in prange(img.shape[0] // large_block_size):
         for j in range(img.shape[1] // large_block_size):
             block = img[i * large_block_size: (i + 1) * large_block_size,
                     j * large_block_size: (j + 1) * large_block_size]
             resized_block = resize(block, 2)
             for trans_number, transformation in enumerate(get_all_possible_transforms()):
-                blocks.append((i, j, trans_number, spatial_transform(resized_block, *transformation)))
+                transformed_block = spatial_transform(resized_block, *transformation)
+                bin_hash = classify(transformed_block)
+                blocks.append((i, j, trans_number, bin_hash, transformed_block))
     return blocks
 
 
@@ -124,30 +138,31 @@ def large_blocks(img, block_size):
 def encode_image(img, block_size):
     large_blocks_list = large_blocks(img, block_size)
     transforms = np.zeros((img.shape[0] // block_size, img.shape[1] // block_size, 5))
-    k = 0
-    size = img.shape[0] // block_size * img.shape[1] // block_size * len(large_blocks_list)
     for i in prange(img.shape[0] // block_size):
-        for j in prange(img.shape[1] // block_size):
+        for j in range(img.shape[1] // block_size):
             target_block = img[i * block_size: (i + 1) * block_size,
-                           j * block_size: (j + 1) * block_size]
+                               j * block_size: (j + 1) * block_size]
+            block_hash = classify(target_block)
             dist = np.inf
-            for y, x, trans_number, block in large_blocks_list:
-                contrast, brightness = calculate_contrast_brightness(block, target_block)
-                block = color_transform(block, contrast, brightness)
-                k = k + 1
-                error = l1_distance(block, target_block)
-                if error < dist:
-                    dist = error
-                    transforms[i, j] = (float(y), float(x), float(trans_number), contrast, brightness)
-            print(round(k/size, 4))
+            for y, x, trans_number, bin_hash, block in large_blocks_list:
+                if block_hash == bin_hash:
+                    contrast, brightness = calculate_contrast_brightness(block, target_block)
+                    block = color_transform(block, contrast, brightness)
+                    error = l1_distance(block, target_block)
+                    if error < dist:
+                        dist = error
+                        transforms[i, j] = (float(y), float(x), float(trans_number), contrast, brightness)
+
+        print(i)
     return transforms
 
 
-@njit()
+@njit(parallel=True)
 def decoder_step(img, block_size, transforms):
     result_image = np.zeros((transforms.shape[0] * block_size, transforms.shape[1] * block_size))
     all_possible_transforms = get_all_possible_transforms()
     for i in prange(transforms.shape[0]):
+
         for j in prange(transforms.shape[1]):
             y, x, trans_number, contrast, brightness = transforms[i, j]
             y, x, trans_number = int(y), int(x), int(trans_number)
@@ -156,26 +171,31 @@ def decoder_step(img, block_size, transforms):
                            x * 2 * block_size: (x + 1) * 2 * block_size], 2)
             result_block = transform(block, all_possible_transforms[trans_number], contrast, brightness)
 
-            result_image[i * block_size: (i + 1) * result_image,
-            j * block_size: (j + 1) * result_image] = result_block
+            result_image[i * block_size: (i + 1) * block_size,
+            j * block_size: (j + 1) * block_size] = result_block
 
     return result_image
 
 
 def save_result(img, idx, save_path, image_name):
+    image_dir = Path(os.path.join(save_path, image_name))
+    image_dir.mkdir(exist_ok=True, parents=True)
     cv2.imwrite(os.path.join(save_path, image_name, f"{idx}.bmp"), img)
 
 
 def decoder(block_size, transforms, n_iterations, save_path, image_name, original_image):
-    image = np.random(0, 256, original_image.shape).astype('uint8')
-    image.save_result(image, 0, save_path, image_name)
+    image = np.random.randint(0, 256, (transforms.shape[0] * block_size, transforms.shape[1] * block_size), dtype='uint8')
+    save_result(image, 0, save_path, image_name)
     results = [PSNR(image, original_image)]
+    save_result(original_image, "original", save_path, image_name)
     for iteration in tqdm(range(1, n_iterations + 1)):
         image = decoder_step(image, block_size, transforms).astype('uint8')
         results.append(PSNR(image, original_image))
-        image.save_result(image, iteration, save_path, image_name)
+        save_result(image, iteration, save_path, image_name)
 
     plt.plot(results)
+    plt.xlabel("iteration_numbers")
+    plt.ylabel("PSNR")
     plt.savefig(os.path.join(save_path, image_name, "psnr.png"))
 
 
@@ -190,6 +210,8 @@ def get_args():
                         help='Block size for patterns.')
     parser.add_argument('--n_iterations', type=int, default=10,
                         help='Restoring iterations.')
+    parser.add_argument('--debug_size', type=int, default=None,
+                        help='scale for debugging resize')
 
     return parser.parse_args()
 
@@ -203,6 +225,8 @@ def main():
     args = get_args()
 
     img, image_name = read_image(args.img_path)
+    if args.debug_size is not None:
+        img = resize(img, args.debug_size)
     print("encoding...")
     start_time = time()
     transforms = encode_image(img, args.block_size)
