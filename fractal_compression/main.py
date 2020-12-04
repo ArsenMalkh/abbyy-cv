@@ -1,25 +1,26 @@
 import cv2
 import argparse
 import numpy as np
-from numba import njit, prange
+from numba import njit
 from time import time
 from tqdm import tqdm
 import os
 from matplotlib import pyplot as plt
 from pathlib  import Path
+import scipy
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=False)
 def MSE(output, original):
     h, w = output.shape
     return 1 / (h * w) * np.power(output - original, 2).sum()
 
 
-@njit(fastmath=True)
+@njit(fastmath=False)
 def PSNR(output, original):
     mse = MSE(output, original)
     Y_max = 255
-    return 10 * np.log10(Y_max * Y_max / mse)
+    return 10 * np.log10(Y_max * Y_max / np.power(output - original, 2).mean())
 
 
 @njit()
@@ -93,7 +94,7 @@ def transform(img, transformation, contrast=1.0, brightness=0):
     return color_transform(img, contrast, brightness)
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=False, fastmath=True)
 def resize(img, scale):
     """
     image compression by mean
@@ -101,10 +102,10 @@ def resize(img, scale):
     :param scale: scale in range 1.0 +
     :return: replace pixel with mean of block
     """
-    rescaled_image = np.zeros((img.shape[0] // scale, img.shape[1] // scale))
+    rescaled_image = np.zeros((img.shape[0] // scale, img.shape[1] // scale), dtype=np.float64)
 
-    for i in prange(rescaled_image.shape[0]):
-        for j in prange(rescaled_image.shape[1]):
+    for i in range(rescaled_image.shape[0]):
+        for j in range(rescaled_image.shape[1]):
             rescaled_image[i, j] = np.mean(img[i * scale: (i + 1) * scale, j * scale: (j + 1) * scale])
 
     return rescaled_image
@@ -122,7 +123,7 @@ def large_blocks(img, block_size):
     blocks = []
     large_block_size = block_size * 2
 
-    for i in prange(img.shape[0] // large_block_size):
+    for i in range(img.shape[0] // large_block_size):
         for j in range(img.shape[1] // large_block_size):
             block = img[i * large_block_size: (i + 1) * large_block_size,
                     j * large_block_size: (j + 1) * large_block_size]
@@ -134,11 +135,12 @@ def large_blocks(img, block_size):
     return blocks
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=False, fastmath=True)
 def encode_image(img, block_size):
     large_blocks_list = large_blocks(img, block_size)
-    transforms = np.zeros((img.shape[0] // block_size, img.shape[1] // block_size, 5))
-    for i in prange(img.shape[0] // block_size):
+    transforms = np.zeros((img.shape[0] // block_size, img.shape[1] // block_size, 5), dtype=np.float64)
+    size = img.shape[0] // block_size
+    for i in range(img.shape[0] // block_size):
         for j in range(img.shape[1] // block_size):
             target_block = img[i * block_size: (i + 1) * block_size,
                                j * block_size: (j + 1) * block_size]
@@ -152,18 +154,17 @@ def encode_image(img, block_size):
                     if error < dist:
                         dist = error
                         transforms[i, j] = (float(y), float(x), float(trans_number), contrast, brightness)
-
-        print(i)
+        print(round(i / size, 2))
     return transforms
 
 
-@njit(parallel=True)
+@njit(parallel=False)
 def decoder_step(img, block_size, transforms):
-    result_image = np.zeros((transforms.shape[0] * block_size, transforms.shape[1] * block_size))
+    result_image = np.zeros((transforms.shape[0] * block_size, transforms.shape[1] * block_size), dtype=np.float64)
     all_possible_transforms = get_all_possible_transforms()
-    for i in prange(transforms.shape[0]):
+    for i in range(transforms.shape[0]):
 
-        for j in prange(transforms.shape[1]):
+        for j in range(transforms.shape[1]):
             y, x, trans_number, contrast, brightness = transforms[i, j]
             y, x, trans_number = int(y), int(x), int(trans_number)
 
@@ -177,26 +178,31 @@ def decoder_step(img, block_size, transforms):
     return result_image
 
 
-def save_result(img, idx, save_path, image_name):
-    image_dir = Path(os.path.join(save_path, image_name))
+def save_result(img, idx, save_path, image_name, block_size):
+    image_dir = Path(os.path.join(save_path, f"{image_name}_{block_size}"))
     image_dir.mkdir(exist_ok=True, parents=True)
-    cv2.imwrite(os.path.join(save_path, image_name, f"{idx}.bmp"), img)
+    cv2.imwrite(os.path.join(save_path, f"{image_name}_{block_size}", f"{idx}.tiff"), img)
 
 
 def decoder(block_size, transforms, n_iterations, save_path, image_name, original_image):
-    image = np.random.randint(0, 256, (transforms.shape[0] * block_size, transforms.shape[1] * block_size), dtype='uint8')
-    save_result(image, 0, save_path, image_name)
-    results = [PSNR(image, original_image)]
-    save_result(original_image, "original", save_path, image_name)
+    image = np.random.randint(0, 255, (transforms.shape[0] * block_size, transforms.shape[1] * block_size))
+    images = [image]
+    save_result(image.astype('uint8'), 0, save_path, image_name, block_size)
+    results = [PSNR(image.astype(np.float64), original_image.astype(np.float64))]
+    save_result(original_image, "original", save_path, image_name, block_size)
     for iteration in tqdm(range(1, n_iterations + 1)):
-        image = decoder_step(image, block_size, transforms).astype('uint8')
-        results.append(PSNR(image, original_image))
-        save_result(image, iteration, save_path, image_name)
-
+        image = decoder_step(image.astype(np.float64), block_size, transforms)
+        images.append(image)
+        results.append(PSNR(image.astype(np.float64), original_image.astype(np.float64)))
+        save_result(image.astype('uint8'), iteration, save_path, image_name, block_size)
+    print(len(results))
+    save_result(images[np.argmax(results)].astype('uint8'), "best", save_path, image_name, block_size)
+    print(len(images))
+    print(f"Best PSNR value {max(results)}")
     plt.plot(results)
-    plt.xlabel("iteration_numbers")
+    plt.xlabel("iteration numbers")
     plt.ylabel("PSNR")
-    plt.savefig(os.path.join(save_path, image_name, "psnr.png"))
+    plt.savefig(os.path.join(save_path, f"{image_name}_{block_size}", "psnr.png"))
 
 
 def get_args():
@@ -208,9 +214,9 @@ def get_args():
                         help='save dir path')
     parser.add_argument('--block_size', type=int, default=4, choices=[4, 8],
                         help='Block size for patterns.')
-    parser.add_argument('--n_iterations', type=int, default=10,
+    parser.add_argument('--n_iterations', type=int, default=100,
                         help='Restoring iterations.')
-    parser.add_argument('--debug_size', type=int, default=None,
+    parser.add_argument('--debug_scale', type=int, default=None,
                         help='scale for debugging resize')
 
     return parser.parse_args()
@@ -225,17 +231,17 @@ def main():
     args = get_args()
 
     img, image_name = read_image(args.img_path)
-    if args.debug_size is not None:
-        img = resize(img, args.debug_size)
+    if args.debug_scale is not None:
+        img = resize(img, args.debug_scale)
     print("encoding...")
     start_time = time()
-    transforms = encode_image(img, args.block_size)
-    print(f"encoding takes {time() - start_time}s")
+    transforms = encode_image(img.astype(np.float64), args.block_size)
+    print("encoding takes {}s".format(time() - start_time))
 
     print("decoding...")
     start_time = time()
     decoder(args.block_size, transforms, args.n_iterations, args.save_dir, image_name, img)
-    print(f"encoding takes {time() - start_time}s")
+    print("encoding takes {}s".format(time() - start_time))
 
 
 if __name__ == '__main__':
