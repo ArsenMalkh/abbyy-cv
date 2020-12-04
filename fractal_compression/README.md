@@ -19,6 +19,8 @@ optional arguments:
                         scale for debugging resize of original image
 ```
 
+Быстродействие порядка 10 минут на полное изображение на кодирование и 22 секунды на энкодинг
+
 # Results
 ## Block size 4
 ### Lena
