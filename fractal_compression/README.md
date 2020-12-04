@@ -22,14 +22,16 @@ optional arguments:
 # Results
 ## Block size 4
 ### Lena
+decoded image
 
 ![psnr](data/results/Lena_4/best.bmp)
 
-Maximum psnr value:
+Maximum psnr value: 32.08
 
 ![psnr](data/results/Lena_4/psnr.png)
 
 ### Boat
+decoded image
 
 ![psnr](data/results/Boat_4/best.bmp)
 
@@ -38,23 +40,26 @@ Maximum psnr value:  29.72
 ![psnr](data/results/Boat_4/psnr.png)
 
 ### Goldhill
+decoded image
 
 ![psnr](data/results/Goldhill_4/best.bmp)
 
-Maximum psnr value:
+Maximum psnr value: 30.91
 
 ![psnr](data/results/Goldhill_4/psnr.png)
 
 ## Block size 8
 ### Lena
+decoded image
 
 ![psnr](data/results/Lena_8/best.bmp)
 
-Maximum psnr value:
+Maximum psnr value: 26.26
 
 ![psnr](data/results/Lena_8/psnr.png)
 
 ### Boat
+decoded image
 
 ![psnr](data/results/Boat_8/best.bmp)
 
@@ -63,11 +68,13 @@ Maximum psnr value: 24.12
 ![psnr](data/results/Boat_8/psnr.png)
 
 ### Goldhill
+decoded image
 
 ![psnr](data/results/Goldhill_8/best.bmp)
 
-Maximum psnr value:
+Maximum psnr value: 25.41
 
 ![psnr](data/results/Goldhill_8/psnr.png)
+
 
 
