@@ -7,6 +7,12 @@ import cv2
 from pathlib import Path
 import time
 
+def profiler(start_time, end_time, source_np):
+    h, w = source_np.shape
+    img_time = end_time - start_time
+    
+    return img_time, img_time/h/w * 10**6
+
 
 class PyramidLayer:
     def __init__(self, previous_layer, first_layer=False, noise_const=10, noise_order_mult=3, noise_variance_mult=2,
@@ -174,9 +180,13 @@ def main():
     for image_path in tqdm(paths):
         img, image_name = read_image(image_path)
         img_c = contrast_adjustment(img)
+        start_time = time.time()
         img = ImagePyramid(img.astype(np.float64))
         img.calc_thresholds()
         img = img.binarize_image()
+        end_time = time.time()
+        time_image, time_mp = profiler(start_time, end_time, img)
+        print("time for image {}s time for mp {}s".format(time_image, time_mp))
         # print("no correction made")
         # img_c = ImagePyramid(img_c.astype(np.float64))
         # img_c.calc_thresholds()
@@ -184,7 +194,6 @@ def main():
         # print("correction made")
         save_result(255 * img, args.save_dir,
                     image_name)
-        time.sleep(60)
 
 
 if __name__ == '__main__':

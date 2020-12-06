@@ -9,6 +9,11 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 import time
 
+def profiler(start_time, end_time, source_np):
+    h, w = source_np.shape
+    time_image = end_time - start_time
+    
+    return (time_image, time_image/h/w * 10**6)
 
 def read_image(path):
     image_name = path.split("/")[-1].split(".")[0]
@@ -54,13 +59,19 @@ def find_t(block, image_mean, bin_type):
         return mu * (1 + k * (sigma / R - 1))
     elif bin_type == "wolf":
         k = 0.25
-        R = 110
+        R = 100
         m = np.min(block)
-        return (1 - k)*mu + k * m + k * sigma / R * (mu - m)
+        return (1 - k) * mu + k * m + k * sigma / R * (mu - m)
     elif bin_type == "2018":
         k = 0.2
-        R = 110
+        R = 100
         return (image_mean + np.max(block)) / 2 * (1 + k * (sigma/R-1))
+    elif bin_type == "skew":
+        k = 0.02
+        R = 100
+        skew = find_skew(block, mu, sigma)
+        return mu * (1 + k * skew * (1 - skew/R))
+
 
 @njit
 def binarization(image, block_size, bin_type):
@@ -87,7 +98,7 @@ def get_args():
                         help='save dir path')
     parser.add_argument('--block_size', type=int, default=50,
                         help='Block size for patterns.')
-    parser.add_argument('--binarization_type', type=str, choices=["sauvola", "2018", "wolf"],
+    parser.add_argument('--binarization_type', type=str, choices=["sauvola", "2018", "wolf", "skew"],
                         help='type of binarization.')
     return parser.parse_args()
 
@@ -137,8 +148,12 @@ def main():
         img_c = contrast_adjustment(img)
         img_c = np.clip(img_c, 0, 255)
         img_c = binarization(img_c.astype(np.float64), args.block_size, args.binarization_type)
+        start_time = time.time()
         img = binarization(img.astype(np.float64), args.block_size, args.binarization_type)
-        save_result(np.vstack((255 * img, np.zeros((100, img.shape[1])), 255 * img_c)).astype("uint"), args.save_dir, image_name)
+        end_time = time.time()
+        time_image, time_mp = profiler(start_time, end_time, img)
+        print("time for image {}s time for mp {}s".format(time_image, time_mp))
+        save_result((255 * img).astype("uint"), args.save_dir, image_name)
 
 
 if __name__ == '__main__':
