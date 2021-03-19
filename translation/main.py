@@ -11,13 +11,13 @@ def parse_args():
     parser.add_argument('--imgs_path', required=True,
                         help='input images path')
     parser.add_argument('--nms', type=int, default=2,
-                        help='nms')
+                        help='nms size')
     parser.add_argument('--conf', type=float, default=0.015,
-                        help='Block size for patterns.')
+                        help='confidence for keypoint detection')
     parser.add_argument('--nn_tresh', type=float, default=1.0,
-                        help='type of binarization.')
+                        help='threshold for nearest neighbors algorithm')
     parser.add_argument('--save_path', type=str, default="./",
-                        help='path to save')
+                        help='path to save results csv')
     return parser.parse_args()
 
 
@@ -27,7 +27,7 @@ def main():
     conf_thresh = args.conf
     nn_thresh = args.nn_tresh
     images = sorted(os.listdir("data/"))
-    keypoint_extractor = superpoint.SuperPointFrontend(weights_path="../SuperPointPretrainedNetwork/superpoint_v1.pth",
+    keypoint_extractor = superpoint.SuperPointFrontend(weights_path="./superpoint_v1.pth",
                                                        nms_dist=nms_dist, conf_thresh=conf_thresh, nn_thresh=nn_thresh)
 
     time_start = time.time()
