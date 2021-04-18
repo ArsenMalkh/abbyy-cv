@@ -47,10 +47,10 @@ def main():
         rep = local_result[0].mean()
         results[method] = {"time": local_result[1] * 1000000, "repeatability": rep, "x": x_1, "y_1": y_1, "y_2": y_2}
         print(method, "{:.2f}".format(results[method]["repeatability"]))
-        utils.plot_distribution(results, "portion of points that appear in Nth img mesuared by motion estimation",
-                          "y_2", "in_nth_images_motion_est", args.output_dir)
-        utils.plot_distribution(results, "portion of points that appear in N or more imgs mesuared by motion estimation",
-                          "y_1", "in_n_images_motion_est", args.output_dir)
+    utils.plot_distribution(results, "portion of points that appear in Nth img mesuared by motion estimation",
+                      "y_2", "in_nth_images_motion_est", args.output_dir)
+    utils.plot_distribution(results, "portion of points that appear in N or more imgs mesuared by motion estimation",
+                      "y_1", "in_n_images_motion_est", args.output_dir)
     print()
     print("working time")
     for key in results:
