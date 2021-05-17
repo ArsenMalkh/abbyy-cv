@@ -10,6 +10,8 @@
 Precision: 0.97 Recall: 0.92
 ## Test Set 2
 Precision: 0.98 Recall: 0.84
+## Test Set 3
+Precision: 0.74 Recall: 0.86
 
 ## PS
 написал просмоторщик:
